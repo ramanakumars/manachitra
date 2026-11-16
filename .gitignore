@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+
+# Vite / Vitest caches
+.vite/
+.vitest/
+
+# Raster data (served from static hosting, not versioned)
+*.tif
+*.tiff
+*.TIF
+*.TIFF
+# GDAL sidecar files
+*.ovr
+*.aux.xml
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editors and OS
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>manachitra</title>
+        <style>
+            :root {
+                --bg: #ffffff;
+                --fg: #1a1a1a;
+                --panel: rgba(255, 255, 255, 0.85);
+            }
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --bg: #121212;
+                    --fg: #e8e8e8;
+                    --panel: rgba(30, 30, 30, 0.85);
+                    color-scheme: dark;
+                }
+            }
+            html,
+            body {
+                margin: 0;
+                height: 100%;
+                background: var(--bg);
+                color: var(--fg);
+                font-family: system-ui, sans-serif;
+            }
+            #map {
+                position: absolute;
+                inset: 0;
+            }
+            #status {
+                position: absolute;
+                bottom: 0.75rem;
+                left: 0.75rem;
+                z-index: 1;
+                padding: 0.4rem 0.7rem;
+                border-radius: 4px;
+                background: var(--panel);
+                font-size: 0.85rem;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="map"></div>
+        <div id="status">Reading GeoTIFF headers…</div>
+
+        <script type="module">
+            import "ol/ol.css";
+            import { buildMap } from "./src/index.ts";
+
+            // Each source is a COG URL (host must allow CORS + HTTP range requests).
+            // body: a name from BODIES (src/bodies.ts) or { name, code, a, b }
+            // projection: "eqc" | "moll" | "npstere" | "spstere"
+            // display (optional): initial toolbar state, shared by every layer
+            //   { bands: [n] | [r, g, b], min, max, scale: "linear" | "log", colormap }
+            // const config = {
+            //     body: "jupiter",
+            //     projection: "npstere",
+            //     sources: ["public/jupiter_aurora_all.tif"], // 1 band, values 0-572
+            //     display: {
+            //         bands: [1],
+            //         min: 0,
+            //         max: 500,
+            //         scale: "linear",
+            //         colormap: "magma",
+            //     },
+            // };
+
+            // JunoCam GRS mosaic: 15-band LAEA tiles, values ~0-1
+            const config = {
+                body: "jupiter",
+                projection: "eqc",
+                sources: Array.from(
+                    { length: 32 },
+                    (_, i) => `public/GRS_PJ_27_jc_000${329 + i}.tif`,
+                ),
+                display: { bands: [4, 3, 2], min: 0, max: 1 },
+            };
+
+            const status = document.getElementById("status");
+            buildMap("map", config)
+                .then((map) => {
+                    const n = map.getLayers().item(0).getLayers().getLength();
+                    status.textContent = `${n} of ${config.sources.length} layers loaded`;
+                })
+                .catch((err) => {
+                    console.error(err);
+                    status.textContent = `Map failed to load: ${err.message}`;
+                });
+        </script>
+    </body>
+</html>
