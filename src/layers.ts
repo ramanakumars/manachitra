@@ -12,7 +12,7 @@ export function createSource(meta: SourceMeta, display: DisplayState): GeoTIFF {
         sources: [sourceInfo(meta.url, display)],
         projection: meta.code, // skip OL's EPSG-only detection
         normalize: false, // raw values; the style does the stretch
-        interpolate: true,
+        interpolate: false,
     });
 }
 
