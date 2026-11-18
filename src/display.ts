@@ -4,6 +4,9 @@
 //              applies), 3 bands = RGB. Only these bands are read, so
 //              changing them rebuilds each layer's source (refetches tiles).
 //   min/max  : stretch limits (numbers, same for every band shown).
+//   auto     : min/max come from the data (AutoRange: percentiles of the
+//              visible files' samples) instead of the user. On by default;
+//              giving min or max (option, toolbar, update()) turns it off.
 //   scale    : "linear" | "log" (log needs min > 0).
 //   colormap : name from COLORMAPS (gray mode only).
 //   nodata   : optional override of the files' GDAL nodata value(s).
@@ -15,26 +18,30 @@ import type { ColormapName } from "./colormaps.js";
 import { buildStyle, styleVariables } from "./style.js";
 
 export const SCALES = ["linear", "log"] as const;
+export type Scale = (typeof SCALES)[number];
 
 /** Most bands a TIFF can hold (SamplesPerPixel is 16-bit). */
 export const MAX_BANDS = 65535;
-export type Scale = (typeof SCALES)[number];
 
 export interface DisplayState {
     /** 1 (gray) or 3 (RGB) FILE band numbers, 1-based. */
     bands: number[];
     min: number;
     max: number;
+    /** min/max set from the data (AutoRange) rather than by the user. */
+    auto: boolean;
     scale: Scale;
     colormap: ColormapName;
     /** Override of the files' GDAL nodata value(s). */
     nodata?: number | number[];
 }
 
+/** Defaults. min/max are placeholders until the auto range arrives. */
 export const DISPLAY: Readonly<DisplayState> = {
     bands: [1],
     min: 0,
     max: 500,
+    auto: true,
     scale: "linear",
     colormap: "gray",
     nodata: undefined,
@@ -63,6 +70,7 @@ export function validateDisplay(
         return "min and max must be numbers";
     }
     if (!(d.max > d.min)) return "max must be greater than min";
+    if (typeof d.auto !== "boolean") return "auto must be true or false";
     if (!SCALES.includes(d.scale)) return `scale must be one of ${SCALES}`;
     if (d.scale === "log" && !(d.min > 0)) return "log scale needs min > 0";
     if (!COLORMAPS.includes(d.colormap)) {
@@ -96,6 +104,34 @@ const withOwnBands = (d: DisplayState): DisplayState => ({
     bands: Array.isArray(d.bands) ? [...d.bands] : d.bands,
 });
 
+/**
+ * The state a change leads to. Giving min or max without `auto` means the
+ * user picked a range, so auto turns off. With auto on, a log scale gets a
+ * positive placeholder min (the auto range, positive-only, replaces it).
+ */
+function nextState(
+    current: DisplayState,
+    changes: Partial<DisplayState>,
+): DisplayState {
+    const explicitRange =
+        changes.min !== undefined || changes.max !== undefined;
+    const next = withOwnBands({
+        ...current,
+        ...changes,
+        auto: changes.auto ?? (explicitRange ? false : current.auto),
+    });
+    if (next.auto && next.scale === "log" && !(next.min > 0)) {
+        next.min = next.max > 0 ? next.max / 1000 : 1e-3;
+        if (!(next.max > next.min)) next.max = next.min * 1000;
+    }
+    return next;
+}
+
+/** The state a `display` option leads to (DISPLAY plus overrides). */
+export const initialDisplay = (
+    display: Partial<DisplayState> = {},
+): DisplayState => nextState(DISPLAY, display);
+
 const sameBands = (a: number[], b: number[]) =>
     a.length === b.length && a.every((band, i) => band === b[i]);
 
@@ -121,7 +157,7 @@ export class DisplayController {
      */
     constructor(display: Partial<DisplayState> = {}, bandCount = 1) {
         this.nBands = bandCount;
-        this.current = withOwnBands({ ...DISPLAY, ...display });
+        this.current = initialDisplay(display);
         const error = validateDisplay(this.current, bandCount);
         if (error) throw new Error(`Invalid display config: ${error}`);
     }
@@ -197,7 +233,7 @@ export class DisplayController {
      */
     update(changes: Partial<DisplayState>): string | null {
         if ("nodata" in changes) return "nodata is fixed when the map is built";
-        const next = withOwnBands({ ...this.current, ...changes });
+        const next = nextState(this.current, changes);
         const error = validateDisplay(next, this.nBands);
         if (error) return error;
 

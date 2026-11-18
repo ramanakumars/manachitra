@@ -134,6 +134,21 @@
     accent-color: var(--mc-fg);
 }
 
+.mc-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+}
+
+.mc-range {
+    color: var(--mc-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.mc-field[hidden] {
+    display: none;
+}
+
 .mc-toolbar input[type="number"] {
     width: 7em;
 }

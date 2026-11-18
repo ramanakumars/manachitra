@@ -8,13 +8,11 @@
             :root {
                 --bg: #ffffff;
                 --fg: #1a1a1a;
-                --panel: rgba(255, 255, 255, 0.85);
             }
             @media (prefers-color-scheme: dark) {
                 :root {
                     --bg: #121212;
                     --fg: #e8e8e8;
-                    --panel: rgba(30, 30, 30, 0.85);
                     color-scheme: dark;
                 }
             }
@@ -30,85 +28,18 @@
                 position: absolute;
                 inset: 0;
             }
-            #status {
-                position: absolute;
-                bottom: 0.75rem;
-                left: 0.75rem;
-                z-index: 1;
-                padding: 0.4rem 0.7rem;
-                border-radius: 4px;
-                background: var(--panel);
-                font-size: 0.85rem;
-            }
         </style>
     </head>
     <body>
         <div id="map"></div>
-        <div id="status">Reading GeoTIFF headers…</div>
 
         <script type="module">
-            import "ol/ol.css";
+            // An empty map (equirectangular), ready for COG URLs in the layers
+            // panel, e.g. public/M20_JezeroCrater_CTXortho_mosaic_5m_COG.tif.
+            // Options: buildMap("map", { projection, sources, display }).
             import { buildMap } from "./src/index.ts";
 
-            // Each source is a COG URL (host must allow CORS + HTTP range
-            // requests). More can be added from the layers panel's "+".
-            // The body (Mars, Jupiter, ...) is read from the files' CRS.
-            // projection: "eqc" | "moll" | "npstere" | "spstere"
-            // sources (optional): COG URLs to load at start
-            // display (optional): initial toolbar state, shared by every layer
-            //   { bands: [n] | [r, g, b], min, max, scale: "linear" | "log", colormap }
-            // const config = {
-            //     projection: "npstere",
-            //     sources: ["public/jupiter_aurora_all.tif"], // 1 band, values 0-572
-            //     display: {
-            //         bands: [1],
-            //         min: 0,
-            //         max: 500,
-            //         scale: "linear",
-            //         colormap: "magma",
-            //     },
-            // };
-
-            const config = {
-                projection: "eqc",
-                sources: ["public/M20_JezeroCrater_CTXortho_mosaic_5m_COG.tif"],
-                display: {
-                    bands: [1],
-                    min: 0,
-                    max: 255,
-                },
-            };
-
-            // JunoCam GRS mosaic: 15-band LAEA tiles, values ~0-1
-            // const config = {
-            //     projection: "eqc",
-            //     sources: Array.from(
-            //         { length: 32 },
-            //         (_, i) => `public/GRS_PJ_27_jc_000${329 + i}.tif`,
-            //     ),
-            //     display: { bands: [4, 3, 2], min: 0, max: 1 },
-            // };
-
-            const status = document.getElementById("status");
-            buildMap("map", config)
-                .then((map) => {
-                    const sources = map.get("sources");
-                    const report = () => {
-                        const n = sources.entries.length;
-                        const out = sources.entries.filter(
-                            (e) => e.layer === null,
-                        ).length;
-                        status.textContent =
-                            `${n} layer${n === 1 ? "" : "s"}` +
-                            (out ? `, ${out} outside the view` : "");
-                    };
-                    report();
-                    sources.onChange(report);
-                })
-                .catch((err) => {
-                    console.error(err);
-                    status.textContent = `Map failed to load: ${err.message}`;
-                });
+            buildMap("map");
         </script>
     </body>
 </html>

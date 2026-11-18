@@ -1,5 +1,6 @@
-// Display toolbar (top right): mode (gray / RGB), band(s), min/max, scale,
-// colormap, and an optional lon/lat grid toggle. Every edit submits the whole
+// Display toolbar (top right): mode (gray / RGB), band(s), range (auto from
+// the data, or min/max typed in once auto is unchecked), scale, colormap, and
+// an optional lon/lat grid toggle. Every edit submits the whole
 // form to the DisplayController, so the form and the shared display state
 // can't drift apart. Invalid input is flagged and the last valid state stays
 // on screen.
@@ -8,8 +9,13 @@ import type BaseLayer from "ol/layer/Base.js";
 import { COLORMAPS } from "../colormaps.js";
 import type { ColormapName } from "../colormaps.js";
 import { SCALES } from "../display.js";
+import { AUTO_PERCENTILES } from "../stats.js";
 import type { DisplayController, DisplayState, Scale } from "../display.js";
 import { el, field, select } from "./dom.js";
+
+/** A range limit for display: `digits` significant digits, no trailing 0s. */
+export const formatValue = (v: number, digits = 4): string =>
+    String(Number(v.toPrecision(digits)));
 
 /** Default RGB triple for a file with n bands (n >= 3). */
 const defaultRgb = (n: number) => [3, 2, 1].map((b) => Math.min(b, n));
@@ -33,8 +39,12 @@ export class Toolbar extends Control {
     private lastRgb: number[];
     private readonly mode: HTMLSelectElement;
     private readonly bands: HTMLSelectElement[];
+    private readonly auto: HTMLInputElement;
+    private readonly autoRange: HTMLSpanElement;
     private readonly min: HTMLInputElement;
     private readonly max: HTMLInputElement;
+    private readonly minField: HTMLLabelElement;
+    private readonly maxField: HTMLLabelElement;
     private readonly scale: HTMLSelectElement;
     private readonly colormap: HTMLSelectElement;
     private readonly error: HTMLDivElement;
@@ -71,8 +81,16 @@ export class Toolbar extends Control {
         this.bands = ["Red", "Green", "Blue"].map((c) =>
             select([], `${c} band`),
         );
+        const [low, high] = AUTO_PERCENTILES;
+        this.auto = el("input", {
+            type: "checkbox",
+            title: `Set min/max from the data (${low}th–${high}th percentile of the visible files)`,
+        });
+        this.autoRange = el("span", { className: "mc-range" });
         this.min = el("input", { type: "number", step: "any", title: "Min" });
         this.max = el("input", { type: "number", step: "any", title: "Max" });
+        this.minField = field("Min", this.min);
+        this.maxField = field("Max", this.max);
         this.scale = select(SCALES, "Scaling");
         this.colormap = select(COLORMAPS, "Colormap");
         this.error = el("div", { className: "mc-error", role: "alert" });
@@ -83,8 +101,14 @@ export class Toolbar extends Control {
         element.append(
             field("Mode", this.mode),
             this.bandField,
-            field("Min", this.min),
-            field("Max", this.max),
+            // A div, not field()'s <label>: it holds its own label.
+            el("div", { className: "mc-field" }, [
+                el("span", { className: "mc-label", textContent: "Range" }),
+                el("label", { className: "mc-check" }, [this.auto, "Auto"]),
+                this.autoRange,
+            ]),
+            this.minField,
+            this.maxField,
             field("Scale", this.scale),
             this.colormapField,
         );
@@ -111,6 +135,7 @@ export class Toolbar extends Control {
         });
         for (const input of [
             ...this.bands,
+            this.auto,
             this.min,
             this.max,
             this.scale,
@@ -130,17 +155,26 @@ export class Toolbar extends Control {
         super.disposeInternal();
     }
 
-    /** Read the form as a display-state change. */
-    readForm(): Omit<DisplayState, "nodata"> {
+    /**
+     * Read the form as a display-state change. With Auto checked, min/max
+     * are left to AutoRange (not sent); unchecked, the boxes' values are sent
+     * (pre-filled with the last range), which keeps auto off.
+     */
+    readForm(): Partial<Omit<DisplayState, "nodata">> {
         const count = this.mode.value === "rgb" ? 3 : 1;
-        return {
+        const form = {
             bands: this.bands.slice(0, count).map((s) => Number(s.value)),
-            // NaN when empty or not a number; validateDisplay reports it
-            min: this.min.valueAsNumber,
-            max: this.max.valueAsNumber,
+            auto: this.auto.checked,
             // Option values come from SCALES / COLORMAPS; validated anyway
             scale: this.scale.value as Scale,
             colormap: this.colormap.value as ColormapName,
+        };
+        if (form.auto) return form;
+        // NaN when empty or not a number; validateDisplay reports it
+        return {
+            ...form,
+            min: this.min.valueAsNumber,
+            max: this.max.valueAsNumber,
         };
     }
 
@@ -188,8 +222,17 @@ export class Toolbar extends Control {
         this.bandField.querySelector(".mc-label")!.textContent = rgb
             ? "R G B"
             : "Band";
-        this.min.value = String(state.min);
-        this.max.value = String(state.max);
+        // Auto values come from data (e.g. 0.1234567891): shown rounded, and
+        // that's what unchecking Auto starts from. Typed values stay exact.
+        const show = (v: number) =>
+            state.auto ? formatValue(v, 6) : String(v);
+        this.min.value = show(state.min);
+        this.max.value = show(state.max);
+        this.auto.checked = state.auto;
+        this.minField.hidden = state.auto;
+        this.maxField.hidden = state.auto;
+        this.autoRange.hidden = !state.auto;
+        this.autoRange.textContent = `${formatValue(state.min)} – ${formatValue(state.max)}`;
         this.scale.value = state.scale;
         this.colormap.value = state.colormap;
         this.colormap.disabled = rgb; // colormaps apply to gray mode only

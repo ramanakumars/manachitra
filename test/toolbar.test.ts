@@ -24,7 +24,10 @@ function setup(
     const toolbar = new Toolbar(controller);
     const el = toolbar.root;
     const [mode, r, g, b, scale, colormap] = el.querySelectorAll("select");
-    const [min, max] = el.querySelectorAll("input");
+    const min = el.querySelector<HTMLInputElement>('input[title="Min"]')!;
+    const max = el.querySelector<HTMLInputElement>('input[title="Max"]')!;
+    const auto = el.querySelector<HTMLInputElement>(".mc-check input")!;
+    const range = el.querySelector<HTMLElement>(".mc-range")!;
     const error = el.querySelector(".mc-error")!;
     return {
         controller,
@@ -38,6 +41,8 @@ function setup(
         colormap,
         min,
         max,
+        auto,
+        range,
         error,
     };
 }
@@ -49,7 +54,7 @@ function change(input: HTMLInputElement | HTMLSelectElement, value: string) {
 
 function checkbox(toolbar: Toolbar): HTMLInputElement {
     const grid = toolbar.root.querySelector<HTMLInputElement>(
-        'input[type="checkbox"]',
+        'input[title="Show lon/lat grid"]',
     );
     if (!grid) throw new Error("no grid checkbox");
     return grid;
@@ -86,6 +91,66 @@ describe("Toolbar", () => {
         t.controller.setBandCount(15);
         change(t.mode, "rgb");
         expect(t.controller.state.bands).toEqual([3, 2, 1]);
+    });
+
+    describe("auto range", () => {
+        it("is off when the config gives min/max: Min and Max are shown", () => {
+            const t = setup(); // { min: 0, max: 1 }
+            expect(t.auto.checked).toBe(false);
+            expect(t.min.closest("label")!.hidden).toBe(false);
+            expect(t.range.hidden).toBe(true);
+        });
+
+        it("is on by default: Min/Max hidden, the range shown instead", () => {
+            const t = setup({ bands: [1] });
+            expect(t.auto.checked).toBe(true);
+            expect(t.min.closest("label")!.hidden).toBe(true);
+            expect(t.max.closest("label")!.hidden).toBe(true);
+            t.controller.update({ min: 0.123456789, max: 98.7654, auto: true });
+            expect(t.range.textContent).toBe("0.1235 – 98.77");
+        });
+
+        it("doesn't send min/max while on", () => {
+            const t = setup({ bands: [1] });
+            expect(t.toolbar.readForm()).not.toHaveProperty("min");
+            change(t.scale, "log"); // placeholder min > 0 until data arrives
+            expect(t.controller.state).toMatchObject({
+                scale: "log",
+                auto: true,
+            });
+        });
+
+        it("unchecking shows Min/Max pre-filled with the current range", () => {
+            const t = setup({ bands: [1] });
+            t.controller.update({ min: 12.3456789, max: 201, auto: true });
+            t.auto.checked = false;
+            t.auto.dispatchEvent(new Event("change"));
+            expect(t.min.closest("label")!.hidden).toBe(false);
+            expect([t.min.value, t.max.value]).toEqual(["12.3457", "201"]);
+            expect(t.controller.state).toMatchObject({
+                auto: false,
+                min: 12.3457,
+                max: 201,
+            });
+            // ... and editable
+            change(t.max, "150");
+            expect(t.controller.state).toMatchObject({ auto: false, max: 150 });
+        });
+
+        it("checking it again hands min/max back to the data", () => {
+            const t = setup(); // auto off
+            t.auto.checked = true;
+            t.auto.dispatchEvent(new Event("change"));
+            expect(t.controller.state.auto).toBe(true);
+            expect(t.min.closest("label")!.hidden).toBe(true);
+        });
+
+        it("turns off when min/max are set from code", () => {
+            const t = setup({ bands: [1] });
+            t.controller.update({ max: 7 });
+            expect(t.auto.checked).toBe(false);
+            expect(t.max.value).toBe("7");
+        });
     });
 
     it("switches to gray and back, remembering the RGB bands", () => {
@@ -157,7 +222,9 @@ describe("Toolbar", () => {
 
     it("has no grid checkbox without a graticule layer", () => {
         const t = setup();
-        expect(t.el.querySelector('input[type="checkbox"]')).toBeNull();
+        expect(
+            t.el.querySelector('input[title="Show lon/lat grid"]'),
+        ).toBeNull();
     });
 
     it("toggles the graticule layer from the grid checkbox", () => {

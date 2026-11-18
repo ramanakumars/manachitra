@@ -8,6 +8,7 @@ const gray: DisplayState = {
     bands: [1],
     min: 0,
     max: 500,
+    auto: false,
     scale: "linear",
     colormap: "gray",
 };

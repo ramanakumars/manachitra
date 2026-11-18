@@ -108,6 +108,49 @@ describe("DisplayController", () => {
         expect(layers[0].setStyle).toHaveBeenCalledTimes(1);
     });
 
+    describe("auto range", () => {
+        it("is on by default, off when the config gives min or max", () => {
+            expect(new DisplayController({}, 15).state.auto).toBe(true);
+            expect(new DisplayController({ max: 1 }, 15).state.auto).toBe(
+                false,
+            );
+            expect(
+                new DisplayController({ max: 1, auto: true }, 15).state.auto,
+            ).toBe(true);
+        });
+
+        it("turns off when min/max are given without `auto`", () => {
+            const { controller } = setup();
+            controller.update({ min: 1, max: 2, auto: true });
+            expect(controller.state.auto).toBe(true);
+            controller.update({ colormap: "magma" });
+            expect(controller.state.auto).toBe(true);
+            controller.update({ max: 3 });
+            expect(controller.state.auto).toBe(false);
+            controller.update({ auto: true });
+            expect(controller.state).toMatchObject({ auto: true, max: 3 });
+        });
+
+        it("gives log scale a positive placeholder min while auto", () => {
+            const { controller } = setup(); // auto, min 0, max 500
+            expect(controller.update({ scale: "log" })).toBeNull();
+            expect(controller.state).toMatchObject({ min: 0.5, max: 500 });
+            // ...but a user's min of 0 is still rejected
+            expect(controller.update({ min: 0, max: 1 })).toBe(
+                "log scale needs min > 0",
+            );
+        });
+
+        it("rejects a non-boolean auto", () => {
+            expect(
+                validateDisplay(
+                    { ...DISPLAY, auto: "yes" as unknown as boolean },
+                    15,
+                ),
+            ).toBe("auto must be true or false");
+        });
+    });
+
     it("stops updating a removed layer", () => {
         const { controller, layers } = setup();
         controller.removeLayer(layers[0]);
