@@ -2,7 +2,7 @@
     "name": "manachitra",
     "version": "0.0.1",
     "description": "Web mapping framework for planetary bodies",
-    "license": "ISC",
+    "license": "GPL-3.0-only",
     "author": "Ramanakumar Sankar",
     "type": "module",
     "main": "src/index.ts",
