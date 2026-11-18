@@ -15,6 +15,9 @@ import type { ColormapName } from "./colormaps.js";
 import { buildStyle, styleVariables } from "./style.js";
 
 export const SCALES = ["linear", "log"] as const;
+
+/** Most bands a TIFF can hold (SamplesPerPixel is 16-bit). */
+export const MAX_BANDS = 65535;
 export type Scale = (typeof SCALES)[number];
 
 export interface DisplayState {
@@ -104,7 +107,7 @@ const sameBands = (a: number[], b: number[]) =>
  */
 export class DisplayController {
     /** Bands available in every file (the minimum over all files). */
-    readonly bandCount: number;
+    private nBands: number;
     readonly listeners = new Set<(state: DisplayState) => void>();
     private current: DisplayState;
     private readonly layers: { layer: DisplayLayer; makeSource: MakeSource }[] =
@@ -113,13 +116,44 @@ export class DisplayController {
     /**
      * @param display User overrides, merged onto DISPLAY.
      * @param bandCount Bands available in every file (the minimum over all
-     *   files), which bounds the band pickers.
+     *   files), which bounds the band pickers. Changes with setBandCount as
+     *   files are added and removed.
      */
     constructor(display: Partial<DisplayState> = {}, bandCount = 1) {
-        this.bandCount = bandCount;
+        this.nBands = bandCount;
         this.current = withOwnBands({ ...DISPLAY, ...display });
         const error = validateDisplay(this.current, bandCount);
         if (error) throw new Error(`Invalid display config: ${error}`);
+    }
+
+    /** Bands available in every file (the minimum over all files). */
+    get bandCount(): number {
+        return this.nBands;
+    }
+
+    /**
+     * Set the bands available in every file (files were added or removed).
+     * Band numbers the files no longer have are clamped into range (RGB
+     * becomes gray below 3 bands), which rebuilds the sources. Listeners are
+     * notified even when the state is unchanged, so band pickers can follow.
+     */
+    setBandCount(n: number): void {
+        if (!Number.isInteger(n) || n < 1) {
+            throw new Error(`band count must be a positive integer, got ${n}`);
+        }
+        this.nBands = n;
+        const { bands } = this.current;
+        if (validateDisplay(this.current, n) === null) {
+            this.listeners.forEach((fn) => fn(this.current));
+            return;
+        }
+        const next =
+            bands.length === 3 && n >= 3
+                ? bands.map((b) => Math.min(b, n))
+                : [Math.min(bands[0], n)];
+        console.warn(`bands ${bands} not in every file; showing ${next}`);
+        // valid by construction; update() notifies
+        this.update({ bands: next });
     }
 
     /** The current state. Change it with update(). */
@@ -135,6 +169,17 @@ export class DisplayController {
     /** Track a layer so updates reach it. */
     addLayer(layer: DisplayLayer, makeSource: MakeSource): void {
         this.layers.push({ layer, makeSource });
+    }
+
+    /** Stop tracking a layer (its file was removed). */
+    removeLayer(layer: DisplayLayer): void {
+        const i = this.layers.findIndex((l) => l.layer === layer);
+        if (i >= 0) this.layers.splice(i, 1);
+    }
+
+    /** Stop tracking every layer (their files are being re-placed in a new view). */
+    clearLayers(): void {
+        this.layers.length = 0;
     }
 
     /**
@@ -153,7 +198,7 @@ export class DisplayController {
     update(changes: Partial<DisplayState>): string | null {
         if ("nodata" in changes) return "nodata is fixed when the map is built";
         const next = withOwnBands({ ...this.current, ...changes });
-        const error = validateDisplay(next, this.bandCount);
+        const error = validateDisplay(next, this.nBands);
         if (error) return error;
 
         const prev = this.current;

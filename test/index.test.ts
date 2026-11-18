@@ -8,7 +8,7 @@ vi.mock("../src/metadata.js", () => ({ readAllMeta: vi.fn() }));
 const { readAllMeta } = vi.mocked(await import("../src/metadata.js"));
 const { buildMap } = await import("../src/index.js");
 
-const ok = { body: "jupiter", projection: "eqc", sources: ["a.tif"] };
+const ok = { projection: "eqc", sources: ["a.tif"] };
 
 beforeEach(() => {
     readAllMeta.mockReset();
@@ -17,11 +17,14 @@ beforeEach(() => {
 describe("buildMap", () => {
     it.each([
         [{ ...ok, sources: "a.tif" }, "`sources` must be an array of URLs"],
-        [{ ...ok, body: "pluto" }, 'Unknown body "pluto"'],
         [{ ...ok, projection: "lcc" }, 'Unknown projection "lcc"'],
         [
             { ...ok, display: { min: 1, max: 0 } },
             "Invalid display config: max must be greater than min",
+        ],
+        [
+            { ...ok, display: { bands: [70000] } },
+            "Invalid display config: band 70000 is not in 1..65535",
         ],
     ])(
         "rejects bad arguments before reading any file (%#)",
@@ -34,10 +37,10 @@ describe("buildMap", () => {
         },
     );
 
-    it("says so when none of the sources could be read", async () => {
-        readAllMeta.mockResolvedValue([]);
+    it("says so when none of the sources could be added", async () => {
+        readAllMeta.mockResolvedValue([{ url: "a.tif", error: "404" }]);
         await expect(
             buildMap("map", { ...ok, display: { bands: [4, 3, 2] } }),
-        ).rejects.toThrow("None of the 1 sources could be read (see console)");
+        ).rejects.toThrow("None of the 1 sources could be added (a.tif: 404)");
     });
 });

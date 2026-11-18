@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BODIES, getBody } from "../src/bodies.js";
+import { BODIES, detectBody, getBody, sameBody } from "../src/bodies.js";
 import type { CustomBody } from "../src/bodies.js";
 import { ellipsoid, PROJECTIONS, viewCrs } from "../src/projections.js";
 
@@ -96,5 +96,63 @@ describe("viewCrs", () => {
             (p) => viewCrs(jupiter, p).global,
         );
         expect(global).toEqual(["eqc"]);
+    });
+});
+
+describe("detectBody", () => {
+    const sphere = (a: number, names: string[] = []) => ({ a, b: a, names });
+
+    it.each([
+        // GRS tiles: IAU ellipsoid, "Ellipsoid = Jupiter"
+        [{ a: 71492000, b: 66854000, names: ["Jupiter"] }, "jupiter"],
+        // aurora: older radius, 0.6% above IAU 2015
+        [{ a: 71892000, b: 67251000, names: ["Jupiter"] }, "jupiter"],
+        // Jezero CTX mosaic: Mars sphere, "MARS" / "D_MARS" citations
+        [sphere(3396190, ["MARS", "D MARS"]), "mars"],
+    ] as const)("finds the body named in the citations (%#)", (e, key) => {
+        expect(detectBody({ ...e, names: [...e.names] })).toBe(BODIES[key]);
+    });
+
+    it("matches by radius when no name is recognised", () => {
+        expect(detectBody(sphere(3396190))).toBe(BODIES.mars);
+        // mean-radius spheres count too
+        expect(detectBody(sphere(69911000, ["GCS Unknown"]))).toBe(
+            BODIES.jupiter,
+        );
+        expect(detectBody(sphere(1737400, ["Moon 2000"]))).toBe(BODIES.moon);
+    });
+
+    it("doesn't trust a name whose radius is far off", () => {
+        const b = detectBody(sphere(1821600, ["Mars-ish"]));
+        expect(b).not.toBe(BODIES.mars);
+    });
+
+    it("tells Uranus and Neptune apart by radius", () => {
+        expect(detectBody(sphere(25559000))).toBe(BODIES.uranus);
+        expect(detectBody(sphere(24764000))).toBe(BODIES.neptune);
+    });
+
+    it("makes a custom body from an unknown ellipsoid", () => {
+        const io = detectBody({ a: 1821600, b: 1821600, names: ["Io"] });
+        expect(io).toEqual({
+            name: "Io",
+            code: "IO_1822",
+            a: 1821600,
+            b: 1821600,
+        });
+        const unnamed = detectBody(sphere(500000));
+        expect(unnamed).toMatchObject({
+            name: "Unknown body",
+            code: "UNKNOWNB_500",
+        });
+    });
+});
+
+describe("sameBody", () => {
+    it("compares code and radii, not identity", () => {
+        expect(sameBody(BODIES.mars, { ...BODIES.mars })).toBe(true);
+        expect(sameBody(BODIES.mars, BODIES.jupiter)).toBe(false);
+        expect(sameBody(null, null)).toBe(true);
+        expect(sameBody(null, BODIES.mars)).toBe(false);
     });
 });

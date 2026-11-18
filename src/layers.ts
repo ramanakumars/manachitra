@@ -35,9 +35,8 @@ export function createLayer(
     const layer = new WebGLTileLayer({
         // Footprint in view coords: OL skips fetching when it's off-screen.
         extent,
-        // Only render when zoomed in reasonably close to native resolution
-        // (source and view CRSs are both metres, so this is a fair approximation)
-        maxResolution: meta.resolution * 64,
+        // No maxResolution: sources are COGs, whose overviews keep zoomed-out
+        // views cheap (see CLAUDE.md).
         properties: { name: meta.url.split("/").pop(), url: meta.url },
         source: createSource(meta, controller.state),
         style: controller.styleFor(),

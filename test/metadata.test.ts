@@ -6,7 +6,8 @@ vi.mock("geotiff-geokeys-to-proj4", () => ({ toProj4: vi.fn() }));
 
 const { fromUrl } = vi.mocked(await import("geotiff"));
 const { toProj4 } = vi.mocked(await import("geotiff-geokeys-to-proj4"));
-const { mapLimit, readAllMeta, readMeta } = await import("../src/metadata.js");
+const { citationNames, mapLimit, readAllMeta, readMeta } =
+    await import("../src/metadata.js");
 
 const DEF = "+proj=laea +lat_0=0 +lon_0=0 +a=71492000 +b=66854000 +no_defs";
 
@@ -22,7 +23,10 @@ function fakeImage(overrides: Partial<Record<keyof Image, unknown>> = {}) {
         getSampleFormat: () => 3,
         getGDALNoData: () => null,
         getGDALMetadata: () => null,
-        getGeoKeys: () => ({}),
+        getGeoKeys: () => ({
+            GeogCitationGeoKey:
+                "GCS Name = Jupiter|Datum = Jupiter|Ellipsoid = Jupiter|Primem = Jupiter Prime Meridian|",
+        }),
         getBoundingBox: () => [-8e6, -8e6, 8e6, 8e6],
         getResolution: () => [62500, -62500, 0],
         getWidth: () => 256,
@@ -76,7 +80,17 @@ describe("readMeta", () => {
             height: 256,
             bandCount: 15,
             nodata: NaN,
+            ellipsoid: { a: 71492000, b: 66854000, names: ["Jupiter"] },
         });
+    });
+
+    it("reads the ellipsoid from any proj4 form", async () => {
+        serve(fakeImage());
+        toProj4.mockReturnValue(
+            proj4Result({ proj4: "+proj=eqc +R=3396190 +no_defs", errors: {} }),
+        );
+        const { ellipsoid } = await readMeta("a.tif");
+        expect([ellipsoid.a, ellipsoid.b]).toEqual([3396190, 3396190]);
     });
 
     it("treats bothGCSAndPCSAreSet as informational", async () => {
@@ -136,17 +150,40 @@ describe("readMeta", () => {
 });
 
 describe("readAllMeta", () => {
-    it("drops unreadable files and keeps the rest", async () => {
+    it("reports unreadable files and keeps the rest, in order", async () => {
         fromUrl.mockImplementation(async (url) => {
             if (url === "bad.tif") throw new Error("404");
             return fakeTiff(fakeImage());
         });
-        const metas = await readAllMeta(["a.tif", "bad.tif", "b.tif"]);
-        expect(metas.map((m) => m.url)).toEqual(["a.tif", "b.tif"]);
+        const results = await readAllMeta(["a.tif", "bad.tif", "b.tif"]);
+        expect(results.map((r) => [r.url, r.meta?.url, r.error])).toEqual([
+            ["a.tif", "a.tif", undefined],
+            ["bad.tif", undefined, "404"],
+            ["b.tif", "b.tif", undefined],
+        ]);
         expect(console.error).toHaveBeenCalledWith(
             "bad.tif",
             expect.any(Error),
         );
+    });
+});
+
+describe("citationNames", () => {
+    it("pulls ellipsoid, datum and GCS names from a GDAL/ESRI citation", () => {
+        expect(
+            citationNames({
+                GTCitationGeoKey: "Equirectangular",
+                GeogCitationGeoKey:
+                    "GCS Name = GCS_Geographic_Coordinate_System|Datum = D_MARS|Ellipsoid = MARS|Primem = Reference Meridian|",
+            }),
+        ).toEqual(["MARS", "Geographic Coordinate System", "Equirectangular"]);
+    });
+
+    it("keeps plain citations whole and skips missing keys", () => {
+        expect(citationNames({ GTCitationGeoKey: "Jupiter LAEA" })).toEqual([
+            "Jupiter LAEA",
+        ]);
+        expect(citationNames({})).toEqual([]);
     });
 });
 

@@ -70,6 +70,24 @@ describe("Toolbar", () => {
         expect(t.r.options[14].value).toBe("15");
     });
 
+    it("follows band-count changes (files added or removed)", () => {
+        const t = setup({ bands: [2] });
+        t.controller.setBandCount(2);
+        expect(t.r.options).toHaveLength(2);
+        expect(t.mode.options[1].disabled).toBe(true); // RGB needs 3 bands
+        t.controller.setBandCount(15);
+        expect(t.r.options).toHaveLength(15);
+        expect(t.mode.options[1].disabled).toBe(false);
+        expect(t.r.value).toBe("2");
+    });
+
+    it("offers a real RGB default once a 1-band file is replaced", () => {
+        const t = setup({ bands: [1] }, 1);
+        t.controller.setBandCount(15);
+        change(t.mode, "rgb");
+        expect(t.controller.state.bands).toEqual([3, 2, 1]);
+    });
+
     it("switches to gray and back, remembering the RGB bands", () => {
         const t = setup();
         change(t.mode, "gray");

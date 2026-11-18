@@ -108,6 +108,57 @@ describe("DisplayController", () => {
         expect(layers[0].setStyle).toHaveBeenCalledTimes(1);
     });
 
+    it("stops updating a removed layer", () => {
+        const { controller, layers } = setup();
+        controller.removeLayer(layers[0]);
+        controller.update({ min: 10 });
+        expect(layers[0].updateStyleVariables).not.toHaveBeenCalled();
+        expect(layers[1].updateStyleVariables).toHaveBeenCalled();
+    });
+
+    describe("setBandCount", () => {
+        it("keeps bands that are still in range, and notifies", () => {
+            const { controller, layers } = setup({ bands: [4, 3, 2] });
+            const fn = vi.fn();
+            controller.onChange(fn);
+            controller.setBandCount(4);
+            expect(controller.bandCount).toBe(4);
+            expect(controller.state.bands).toEqual([4, 3, 2]);
+            expect(fn).toHaveBeenCalledTimes(1);
+            expect(layers[0].setSource).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            [[4, 3, 2], 3, [3, 3, 2]],
+            [[4, 3, 2], 1, [1]], // RGB needs 3 bands
+            [[7], 5, [5]],
+        ])("clamps %j to %i bands -> %j", (bands, n, expected) => {
+            vi.spyOn(console, "warn").mockImplementation(() => {});
+            const { controller, layers } = setup({ bands });
+            controller.setBandCount(n);
+            expect(controller.state.bands).toEqual(expected);
+            expect(layers[0].setSource).toHaveBeenCalledTimes(1);
+            vi.restoreAllMocks();
+        });
+
+        it("rejects a non-positive count", () => {
+            const { controller } = setup();
+            expect(() => controller.setBandCount(0)).toThrow(
+                "band count must be a positive integer",
+            );
+        });
+    });
+
+    it("stops updating layers after clearLayers", () => {
+        const { controller, layers } = setup();
+        controller.clearLayers();
+        expect(controller.update({ min: 10, bands: [7] })).toBeNull();
+        for (const layer of layers) {
+            expect(layer.setSource).not.toHaveBeenCalled();
+            expect(layer.updateStyleVariables).not.toHaveBeenCalled();
+        }
+    });
+
     it("keeps sources when the band numbers are unchanged", () => {
         const { controller, layers } = setup({ bands: [4, 3, 2] });
         controller.update({ bands: [4, 3, 2], colormap: "magma" });

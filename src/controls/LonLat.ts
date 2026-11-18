@@ -55,4 +55,9 @@ export class LonLat extends MousePosition {
             placeholder: PLACEHOLDER,
         });
     }
+
+    /** Follow a change of body or view projection. */
+    setView(view: ViewCrs, body: Body): void {
+        this.setCoordinateFormat(lonLatFormatter(view, body));
+    }
 }

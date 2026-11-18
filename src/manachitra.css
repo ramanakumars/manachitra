@@ -1,5 +1,8 @@
-/* manachitra controls: toolbar (top right) and lon/lat readout (bottom right). */
+/* manachitra controls: view bar (full width, top), a right-hand column with
+   the toolbar and layers panel, and the lon/lat readout (bottom right). */
+.mc-viewbar,
 .mc-toolbar,
+.mc-panel,
 .mc-lonlat {
     --mc-bg: rgba(255, 255, 255, 0.9);
     --mc-fg: #1a1a1a;
@@ -10,7 +13,9 @@
 }
 
 @media (prefers-color-scheme: dark) {
+    .mc-viewbar,
     .mc-toolbar,
+    .mc-panel,
     .mc-lonlat {
         --mc-bg: rgba(30, 30, 30, 0.9);
         --mc-fg: #e8e8e8;
@@ -21,12 +26,71 @@
     }
 }
 
-.mc-toolbar {
+/* Full-width strip along the top edge; the controls that sit at the top
+   (OL zoom/rotate, the toolbar) move down below it. */
+.mc-viewbar {
+    top: 0;
+    right: 0;
+    left: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35em 1.2em;
+    min-height: var(--mc-viewbar-height);
+    box-sizing: border-box;
+    padding: 0.35em 0.75em;
+    border-bottom: 1px solid var(--mc-border);
+    border-radius: 0;
+    background: var(--mc-bg);
+    color: var(--mc-fg);
+    font:
+        13px/1.3 system-ui,
+        sans-serif;
+}
+
+.mc-viewbar:hover {
+    background: var(--mc-bg);
+}
+
+.mc-viewbar .mc-label {
+    min-width: 0;
+}
+
+.ol-viewport:has(.mc-viewbar) {
+    --mc-viewbar-height: 2.4rem;
+}
+
+.ol-viewport:has(.mc-viewbar) :is(.ol-zoom, .ol-rotate, .mc-column) {
+    margin-top: var(--mc-viewbar-height);
+}
+
+.mc-body.mc-muted {
+    color: var(--mc-muted);
+}
+
+/* Right-hand column: toolbar on top, layers panel below it, filling the
+   height down to the lon/lat readout. Gaps pass pointer events to the map. */
+.mc-column {
+    position: absolute;
     top: 0.5em;
     right: 0.5em;
+    bottom: 2.6em;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5em;
+    max-width: calc(100% - 5em);
+}
+
+.mc-column > .ol-control {
+    position: relative;
+    pointer-events: auto;
+}
+
+.mc-toolbar {
+    flex: none;
     display: grid;
     gap: 0.35em;
-    max-width: calc(100% - 5em);
     padding: 0.5em 0.6em;
     border-radius: 4px;
     background: var(--mc-bg);
@@ -51,8 +115,10 @@
     color: var(--mc-muted);
 }
 
+.mc-viewbar select,
 .mc-toolbar select,
-.mc-toolbar input {
+.mc-toolbar input,
+.mc-panel textarea {
     min-width: 0;
     padding: 1px 4px;
     border: 1px solid var(--mc-border);
@@ -62,7 +128,8 @@
     font: inherit;
 }
 
-.mc-toolbar input[type="checkbox"] {
+.mc-toolbar input[type="checkbox"],
+.mc-panel input[type="checkbox"] {
     margin: 0;
     accent-color: var(--mc-fg);
 }
@@ -86,6 +153,169 @@
 
 .mc-has-error {
     outline: 1px solid var(--mc-error);
+}
+
+/* Layers panel. `contain: inline-size` keeps long file names from widening
+   the column: the toolbar sets its width, and the panel stretches to it. */
+.mc-panel {
+    display: flex;
+    flex: 0 1 auto;
+    flex-direction: column;
+    gap: 0.35em;
+    min-height: 0;
+    contain: inline-size;
+    padding: 0.4em 0.6em 0.5em;
+    border-radius: 4px;
+    background: var(--mc-bg);
+    color: var(--mc-fg);
+    font:
+        13px/1.3 system-ui,
+        sans-serif;
+}
+
+.mc-panel:hover {
+    background: var(--mc-bg);
+}
+
+/* Undo OL's square, filled control buttons. */
+.mc-panel button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 1px 6px;
+    border: 1px solid var(--mc-border);
+    border-radius: 3px;
+    background: var(--mc-input-bg);
+    color: inherit;
+    font: inherit;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+.mc-panel button:hover,
+.mc-panel button:focus-visible {
+    outline: none;
+    border-color: var(--mc-fg);
+    color: inherit;
+}
+
+.mc-panel button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.mc-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5em;
+}
+
+.mc-panel .mc-panel-title {
+    padding: 1px 0;
+    border-color: transparent;
+    background: none;
+    font-weight: 600;
+}
+
+.mc-panel .mc-add {
+    width: 1.6em;
+    height: 1.6em;
+    padding: 0;
+    font-size: 1.1em;
+    line-height: 1;
+}
+
+.mc-add-form {
+    display: grid;
+    gap: 0.35em;
+}
+
+.mc-add-form[hidden],
+.mc-collapsed .mc-add-form,
+.mc-collapsed .mc-layer-list {
+    display: none;
+}
+
+.mc-panel textarea {
+    resize: vertical;
+    font:
+        12px/1.35 ui-monospace,
+        monospace;
+}
+
+.mc-buttons {
+    display: flex;
+    gap: 0.4em;
+}
+
+.mc-status {
+    color: var(--mc-muted);
+    overflow-wrap: anywhere;
+}
+
+.mc-status .mc-error {
+    max-width: none;
+}
+
+.mc-layer-list {
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+}
+
+.mc-layer {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    padding: 2px 0;
+}
+
+.mc-layer-label {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 0.4em;
+    min-width: 0;
+}
+
+.mc-layer-name {
+    display: flex;
+    min-width: 0;
+    white-space: nowrap;
+}
+
+.mc-name-head {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mc-name-tail {
+    flex: none;
+}
+
+.mc-outside .mc-layer-name,
+.mc-note,
+.mc-empty {
+    color: var(--mc-muted);
+}
+
+.mc-note {
+    flex: none;
+    font-size: 0.9em;
+}
+
+.mc-panel .mc-remove {
+    flex: none;
+    padding: 0 5px;
+    border-color: transparent;
+    background: none;
+    line-height: 1.2;
 }
 
 .mc-lonlat {

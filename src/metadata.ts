@@ -1,7 +1,9 @@
 // GeoTIFF header reads: the JS equivalent of opening each file with rasterio.
 import { fromUrl } from "geotiff";
 import { toProj4 } from "geotiff-geokeys-to-proj4";
+import proj4 from "proj4";
 import type { Extent } from "ol/extent.js";
+import type { Ellipsoid } from "./bodies.js";
 
 /** Header facts for one file. */
 export interface Meta {
@@ -17,6 +19,8 @@ export interface Meta {
     bandCount: number;
     /** GDAL nodata value, null if none (NaN is valid). */
     nodata: number | null;
+    /** The CRS's ellipsoid and its names, for detectBody. */
+    ellipsoid: Ellipsoid;
 }
 
 /** Meta plus its registered CRS code (set by buildMap via codeForSource). */
@@ -24,10 +28,56 @@ export interface SourceMeta extends Meta {
     code: string;
 }
 
+/** GeoKeys whose text can name the body, most specific first. */
+const CITATION_KEYS = [
+    "GeogCitationGeoKey",
+    "PCSCitationGeoKey",
+    "GTCitationGeoKey",
+] as const;
+
+/**
+ * Body-ish names from the GeoKey citations, most specific first. GDAL/ESRI
+ * write GeogCitationGeoKey as "GCS Name = X|Datum = D_X|Ellipsoid = X|...";
+ * the ellipsoid comes first, then datum and GCS. ESRI's D_/GCS_ prefixes are
+ * dropped and underscores become spaces, so "D_MARS" reads as "MARS".
+ */
+export function citationNames(geoKeys: Record<string, unknown>): string[] {
+    const fields: string[] = [];
+    const whole: string[] = [];
+    for (const key of CITATION_KEYS) {
+        const text = geoKeys[key];
+        if (typeof text !== "string") continue;
+        const parts = Object.fromEntries(
+            text
+                .split("|")
+                .map((p) => p.split("=").map((s) => s.trim()))
+                .filter((kv) => kv.length === 2),
+        );
+        if (Object.keys(parts).length) {
+            fields.push(
+                ...["Ellipsoid", "Datum", "GCS Name"]
+                    .map((k) => parts[k])
+                    .filter(Boolean),
+            );
+        } else {
+            whole.push(text);
+        }
+    }
+    const names = [...fields, ...whole]
+        .map((n) =>
+            n
+                .replace(/^(D|GCS)_/i, "")
+                .replace(/_/g, " ")
+                .trim(),
+        )
+        .filter(Boolean);
+    return [...new Set(names)];
+}
+
 /**
  * Read one file's CRS (as a proj string), bounds, resolution and band info.
  * Throws if the file has no usable CRS, or its coordinates aren't in units
- * proj4 can use directly; readAllMeta logs and drops such files.
+ * proj4 can use directly; readAllMeta reports such files.
  */
 export async function readMeta(url: string): Promise<Meta> {
     const tiff = await fromUrl(url);
@@ -58,6 +108,8 @@ export async function readMeta(url: string): Promise<Meta> {
         throw new Error(`${url}: CRS units need conversion; not supported yet`);
     }
 
+    // proj4 parses +a/+b, +R, +rf or +ellps alike.
+    const { a, b } = new proj4.Proj(def) as unknown as { a: number; b: number };
     return {
         url,
         def, // ~ src.crs (as a proj string, not WKT)
@@ -67,6 +119,11 @@ export async function readMeta(url: string): Promise<Meta> {
         height: image.getHeight(),
         bandCount: header.bands,
         nodata: header.nodata, // null if none (NaN is a valid nodata value)
+        ellipsoid: {
+            a,
+            b,
+            names: citationNames(geoKeys as Record<string, unknown>),
+        },
     };
 }
 
@@ -101,6 +158,23 @@ export async function mapLimit<T, R>(
     return out.filter(Boolean).map((r) => r.value);
 }
 
-/** Read all headers, at most `limit` at a time; unreadable files are dropped. */
-export const readAllMeta = (urls: string[], limit = 8): Promise<Meta[]> =>
-    mapLimit(urls, limit, readMeta);
+/** One file's header, or why it couldn't be used. */
+export type MetaResult = { url: string } & (
+    | { meta: Meta; error?: undefined }
+    | { meta?: undefined; error: string }
+);
+
+/**
+ * Read all headers, at most `limit` at a time. Results keep the input order;
+ * unreadable files get an error message (also logged) instead of a Meta.
+ */
+export const readAllMeta = (urls: string[], limit = 8): Promise<MetaResult[]> =>
+    mapLimit(urls, limit, async (url): Promise<MetaResult> => {
+        try {
+            return { url, meta: await readMeta(url) };
+        } catch (e) {
+            console.error(url, e);
+            const error = e instanceof Error ? e.message : String(e);
+            return { url, error };
+        }
+    });

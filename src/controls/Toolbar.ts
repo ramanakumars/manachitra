@@ -9,39 +9,7 @@ import { COLORMAPS } from "../colormaps.js";
 import type { ColormapName } from "../colormaps.js";
 import { SCALES } from "../display.js";
 import type { DisplayController, DisplayState, Scale } from "../display.js";
-
-type Tag = keyof HTMLElementTagNameMap;
-
-function el<K extends Tag>(
-    tag: K,
-    props: Partial<HTMLElementTagNameMap[K]> = {},
-    children: (Node | string)[] = [],
-): HTMLElementTagNameMap[K] {
-    const e = document.createElement(tag);
-    Object.assign(e, props);
-    e.append(...children);
-    return e;
-}
-
-/** <select> from [value, label] pairs (or plain values). */
-function select(
-    options: readonly (string | number | readonly [string, string])[],
-    title: string,
-): HTMLSelectElement {
-    const s = el("select", { title });
-    for (const o of options) {
-        const [value, label] = Array.isArray(o) ? o : [o, o];
-        s.append(
-            el("option", { value: String(value), textContent: String(label) }),
-        );
-    }
-    return s;
-}
-
-function field(label: string, ...inputs: HTMLElement[]): HTMLLabelElement {
-    const text = el("span", { className: "mc-label", textContent: label });
-    return el("label", { className: "mc-field" }, [text, ...inputs]);
-}
+import { el, field, select } from "./dom.js";
 
 /** Default RGB triple for a file with n bands (n >= 3). */
 const defaultRgb = (n: number) => [3, 2, 1].map((b) => Math.min(b, n));
@@ -52,6 +20,8 @@ export type ToggleableLayer = Pick<BaseLayer, "getVisible" | "setVisible">;
 export interface ToolbarOptions {
     /** Layer toggled by the "Grid" checkbox (omit to hide the checkbox). */
     graticule?: ToggleableLayer;
+    /** Element to render into (default: the map's control container). */
+    target?: HTMLElement;
 }
 
 export class Toolbar extends Control {
@@ -74,20 +44,21 @@ export class Toolbar extends Control {
 
     constructor(
         controller: DisplayController,
-        { graticule }: ToolbarOptions = {},
+        { graticule, target }: ToolbarOptions = {},
     ) {
         const element = el("div", {
             className: "mc-toolbar ol-unselectable ol-control",
         });
-        super({ element });
+        super({ element, target });
         this.root = element;
         this.controller = controller;
 
-        const n = controller.bandCount;
-        const bandNumbers = Array.from({ length: n }, (_, i) => i + 1);
         const state = controller.state;
         this.lastGray = state.bands.length === 1 ? state.bands : [1];
-        this.lastRgb = state.bands.length === 3 ? state.bands : defaultRgb(n);
+        this.lastRgb =
+            state.bands.length === 3
+                ? state.bands
+                : defaultRgb(controller.bandCount);
 
         this.mode = select(
             [
@@ -96,10 +67,9 @@ export class Toolbar extends Control {
             ],
             "Display mode",
         );
-        // RGB needs three distinct bands to be meaningful
-        this.mode.options[1].disabled = n < 3;
+        // Options filled in by sync(): the band count changes with the files.
         this.bands = ["Red", "Green", "Blue"].map((c) =>
-            select(bandNumbers, `${c} band`),
+            select([], `${c} band`),
         );
         this.min = el("input", { type: "number", step: "any", title: "Min" });
         this.max = el("input", { type: "number", step: "any", title: "Max" });
@@ -181,8 +151,34 @@ export class Toolbar extends Control {
         this.root.classList.toggle("mc-has-error", Boolean(error));
     }
 
+    /** Offer band numbers 1..bandCount (rebuilt only when the count changes). */
+    private syncBandOptions(): void {
+        const n = this.controller.bandCount;
+        // RGB needs three distinct bands to be meaningful
+        this.mode.options[1].disabled = n < 3;
+        if (this.bands[0].options.length === n) return;
+        for (const s of this.bands) {
+            s.replaceChildren(
+                ...Array.from({ length: n }, (_, i) =>
+                    el("option", {
+                        value: String(i + 1),
+                        textContent: String(i + 1),
+                    }),
+                ),
+            );
+        }
+        // Remembered bands may be out of range (their file is gone), or a
+        // placeholder from when fewer than 3 bands existed (e.g. [1, 1, 1]).
+        if (this.lastGray[0] > n) this.lastGray = [1];
+        const rgb = this.lastRgb;
+        if (rgb.some((b) => b > n) || new Set(rgb).size < Math.min(3, n)) {
+            this.lastRgb = defaultRgb(n);
+        }
+    }
+
     /** Show a display state in the form. */
     sync(state: Readonly<DisplayState>): void {
+        this.syncBandOptions();
         const rgb = state.bands.length === 3;
         if (rgb) this.lastRgb = state.bands;
         else this.lastGray = state.bands;
